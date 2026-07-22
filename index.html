@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Indian Traffic Sign Recognition</title>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --accent: #4f8cff;
+    --text: #e8eaf0;
+    --muted: #9aa1ac;
+    --border: #2a2e38;
+    --good: #4caf82;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    background: var(--bg);
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab-btn.active { background: var(--accent); color: white; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #dropzone:hover, #dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(79,140,255,0.05);
+  }
+  #dropzone p { margin: 8px 0 0; color: var(--muted); font-size: 0.9rem; }
+  #fileInput { display: none; }
+
+  .cam-wrap {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--border);
+  }
+  #video, #camCanvas { width: 100%; display: block; }
+  #camCanvas { display: none; }
+  .scan-box {
+    position: absolute;
+    top: 15%;
+    left: 15%;
+    width: 70%;
+    height: 70%;
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    pointer-events: none;
+    box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
+  }
+  .cam-controls { display: flex; gap: 8px; margin-top: 12px; }
+  .btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn.secondary { background: var(--border); color: var(--text); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:active { opacity: 0.8; }
+
+  .live-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .switch {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background: var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .switch.on { background: var(--good); }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .switch.on::after { transform: translateX(18px); }
+
+  #preview { margin-top: 20px; text-align: center; }
+  #preview img { max-width: 100%; max-height: 260px; border-radius: 12px; border: 1px solid var(--border); }
+
+  #result { margin-top: 20px; display: none; }
+  .result-card {
+    background: rgba(79,140,255,0.08);
+    border: 1px solid rgba(79,140,255,0.3);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .label { font-size: 1.2rem; font-weight: 600; color: var(--accent); }
+  .confidence { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+  .bar-bg { background: var(--border); border-radius: 6px; height: 8px; margin-top: 10px; overflow: hidden; }
+  .bar-fill { background: var(--accent); height: 100%; transition: width 0.3s ease; }
+
+  #status { margin-top: 16px; text-align: center; color: var(--muted); font-size: 0.85rem; min-height: 20px; }
+  .top5 { margin-top: 16px; font-size: 0.85rem; }
+  .top5-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .top5-row:last-child { border-bottom: none; }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>🚦 Indian Traffic Sign Recognition</h1>
+  <div class="subtitle">Runs 100% in your browser — no server, no upload to any backend.</div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="upload">📁 Upload</button>
+    <button class="tab-btn" data-tab="camera">📷 Camera</button>
+  </div>
+
+  <div class="panel active" id="panel-upload">
+    <div id="dropzone">
+      <div style="font-size:2rem;">📷</div>
+      <p>Click to upload, or drag & drop an image</p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" />
+  </div>
+
+  <div class="panel" id="panel-camera">
+    <div class="cam-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="scan-box"></div>
+    </div>
+    <canvas id="camCanvas"></canvas>
+    <div class="cam-controls">
+      <button class="btn" id="captureBtn">📸 Capture & Scan</button>
+      <button class="btn secondary" id="switchCamBtn">🔄 Flip</button>
+    </div>
+    <div class="live-toggle">
+      <div class="switch" id="liveSwitch"></div>
+      <span>Live mode (auto-scan every 1.5s)</span>
+    </div>
+  </div>
+
+  <div id="preview"></div>
+  <div id="status"></div>
+
+  <div id="result">
+    <div class="result-card">
+      <div class="label" id="predLabel">-</div>
+      <div class="confidence" id="predConf">-</div>
+      <div class="bar-bg"><div class="bar-fill" id="predBar" style="width:0%"></div></div>
+      <div class="top5" id="top5"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ----- CONFIG: adjust if your training config differs -----
+const IMAGE_SIZE = 96;
+const IMAGENET_MEAN = [0.485, 0.456, 0.406];
+const IMAGENET_STD  = [0.229, 0.224, 0.225];
+const MODEL_PATH  = "model/best_model.onnx";
+const LABELS_PATH = "model/labels.json";
+const LIVE_SCAN_INTERVAL_MS = 1500;
+// ------------------------------------------------------------
+
+let session = null;
+let labels = null;
+let currentStream = null;
+let facingMode = "environment";
+let liveMode = false;
+let liveTimer = null;
+
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+const predLabel = document.getElementById("predLabel");
+const predConf = document.getElementById("predConf");
+const predBar = document.getElementById("predBar");
+const top5El = document.getElementById("top5");
+
+const video = document.getElementById("video");
+const camCanvas = document.getElementById("camCanvas");
+const captureBtn = document.getElementById("captureBtn");
+const switchCamBtn = document.getElementById("switchCamBtn");
+const liveSwitch = document.getElementById("liveSwitch");
+
+const tabBtns = document.querySelectorAll(".tab-btn");
+const panels = { upload: document.getElementById("panel-upload"), camera: document.getElementById("panel-camera") };
+
+function setStatus(msg, spinning = false) {
+  statusEl.innerHTML = spinning ? `<span class="spinner"></span>${msg}` : msg;
+}
+
+async function init() {
+  setStatus("Loading model…", true);
+  try {
+    const [labelsRes, ortSession] = await Promise.all([
+      fetch(LABELS_PATH).then(r => {
+        if (!r.ok) throw new Error(`labels.json not found (${r.status})`);
+        return r.json();
+      }),
+      ort.InferenceSession.create(MODEL_PATH, { executionProviders: ["wasm"] }),
+    ]);
+    labels = labelsRes;
+    session = ortSession;
+    setStatus("Model ready.");
+  } catch (err) {
+    console.error(err);
+    setStatus("⚠️ Failed to load model: " + err.message);
+  }
+}
+
+function waitForModel() {
+  return new Promise((resolve) => {
+    const check = setInterval(() => {
+      if (session && labels) { clearInterval(check); resolve(); }
+    }, 100);
+  });
+}
+
+tabBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    tabBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    Object.entries(panels).forEach(([k, el]) => el.classList.toggle("active", k === tab));
+    if (tab === "camera") startCamera(); else stopCamera();
+  });
+});
+
+dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+dropzone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropzone.classList.remove("dragover");
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", (e) => {
+  if (e.target.files.length) handleFile(e.target.files[0]);
+});
+
+async function handleFile(file) {
+  if (!file.type.startsWith("image/")) { setStatus("⚠️ Please upload an image file."); return; }
+  const url = URL.createObjectURL(file);
+  preview.innerHTML = `<img src="${url}" alt="preview" />`;
+  resultEl.style.display = "none";
+
+  if (!session || !labels) { setStatus("Model still loading, please wait…", true); await waitForModel(); }
+
+  setStatus("Running inference…", true);
+  try {
+    const img = await loadImage(url);
+    await runInference(img);
+    setStatus("Done.");
+  } catch (err) {
+    console.error(err);
+    setStatus("⚠️ Inference failed: " + err.message);
+  }
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+async function startCamera() {
+  stopCamera();
+  setStatus("Requesting camera access…", true);
+  try {
+    currentStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
+    });
+    video.srcObject = currentStream;
+    setStatus(session && labels ? "Camera ready. Point at a sign and capture." : "Camera ready, loading model…", !session);
+  } catch (err) {
+    console.error(err);
+    setStatus("⚠️ Camera access denied or unavailable: " + err.message);
+  }
+}
+
+function stopCamera() {
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+  }
+  stopLiveMode();
+}
+
+switchCamBtn.addEventListener("click", () => {
+  facingMode = facingMode === "environment" ? "user" : "environment";
+  startCamera();
+});
+
+captureBtn.addEventListener("click", async () => { await captureAndScan(); });
+
+liveSwitch.addEventListener("click", () => {
+  liveMode = !liveMode;
+  liveSwitch.classList.toggle("on", liveMode);
+  if (liveMode) startLiveMode(); else stopLiveMode();
+});
+
+function startLiveMode() {
+  if (liveTimer) return;
+  liveTimer = setInterval(() => { if (currentStream) captureAndScan(true); }, LIVE_SCAN_INTERVAL_MS);
+}
+
+function stopLiveMode() {
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+}
+
+async function captureAndScan(isLive = false) {
+  if (!currentStream || video.readyState < 2) {
+    if (!isLive) setStatus("⚠️ Camera not ready yet.");
+    return;
+  }
+  if (!session || !labels) {
+    if (!isLive) { setStatus("Model still loading, please wait…", true); await waitForModel(); }
+    else return;
+  }
+
+  camCanvas.width = video.videoWidth;
+  camCanvas.height = video.videoHeight;
+  const ctx = camCanvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
+
+  if (!isLive) {
+    const dataUrl = camCanvas.toDataURL("image/jpeg", 0.9);
+    preview.innerHTML = `<img src="${dataUrl}" alt="captured" />`;
+  }
+
+  if (!isLive) setStatus("Running inference…", true);
+  try {
+    await runInference(camCanvas);
+    if (!isLive) setStatus("Done.");
+    else setStatus("Live scanning…");
+  } catch (err) {
+    console.error(err);
+    if (!isLive) setStatus("⚠️ Inference failed: " + err.message);
+  }
+}
+
+async function runInference(imageSource) {
+  const tensor = preprocessImage(imageSource);
+  const feeds = { [session.inputNames[0]]: tensor };
+  const output = await session.run(feeds);
+  const logits = output[session.outputNames[0]].data;
+  const probs = softmax(Array.from(logits));
+
+  const sorted = probs
+    .map((p, i) => ({ label: labels[i], prob: p }))
+    .sort((a, b) => b.prob - a.prob);
+
+  showResult(sorted);
+}
+
+// Resize -> RGB -> normalize (ImageNet mean/std) -> CHW float32 tensor, matching
+// the PIL/torchvision preprocessing used in predict_image() in the notebook.
+// Accepts an HTMLImageElement or an HTMLCanvasElement as input.
+function preprocessImage(source) {
+  const canvas = document.createElement("canvas");
+  canvas.width = IMAGE_SIZE;
+  canvas.height = IMAGE_SIZE;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(source, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
+  const imageData = ctx.getImageData(0, 0, IMAGE_SIZE, IMAGE_SIZE).data;
+
+  const size = IMAGE_SIZE * IMAGE_SIZE;
+  const float32Data = new Float32Array(3 * size);
+
+  for (let i = 0; i < size; i++) {
+    const r = imageData[i * 4] / 255;
+    const g = imageData[i * 4 + 1] / 255;
+    const b = imageData[i * 4 + 2] / 255;
+
+    float32Data[i] = (r - IMAGENET_MEAN[0]) / IMAGENET_STD[0];
+    float32Data[size + i] = (g - IMAGENET_MEAN[1]) / IMAGENET_STD[1];
+    float32Data[2 * size + i] = (b - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
+  }
+
+  return new ort.Tensor("float32", float32Data, [1, 3, IMAGE_SIZE, IMAGE_SIZE]);
+}
+
+function softmax(arr) {
+  const max = Math.max(...arr);
+  const exps = arr.map(x => Math.exp(x - max));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map(x => x / sum);
+}
+
+function showResult(sorted) {
+  const top = sorted[0];
+  predLabel.textContent = top.label;
+  predConf.textContent = `Confidence: ${(top.prob * 100).toFixed(1)}%`;
+  predBar.style.width = `${(top.prob * 100).toFixed(1)}%`;
+
+  top5El.innerHTML = sorted.slice(0, 5).map(item =>
+    `<div class="top5-row"><span>${item.label}</span><span>${(item.prob * 100).toFixed(1)}%</span></div>`
+  ).join("");
+
+  resultEl.style.display = "block";
+}
+
+init();
+</script>
+
+</body>
+</html>
