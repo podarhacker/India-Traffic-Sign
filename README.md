@@ -1,6 +1,6 @@
 # Indian Traffic Sign Recognition — Web App
 
-Runs 100% in the browser using `onnxruntime-web` (WASM). No backend, no server RAM needed.
+Runs 100% in the browser using `onnxruntime-web` (WASM). No backend, no server RAM needed. 
 Supports both **image upload** and **live camera scanning** (with an optional auto-scan "live mode").
 
 ---
