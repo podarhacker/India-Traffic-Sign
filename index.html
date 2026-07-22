@@ -238,9 +238,9 @@
 
 <script>
 // ----- CONFIG: adjust if your training config differs -----
-const IMAGE_SIZE = 96;
-const IMAGENET_MEAN = [0.485, 0.456, 0.406];
-const IMAGENET_STD  = [0.229, 0.224, 0.225];
+const IMAGE_SIZE = 64;
+const IMAGENET_MEAN = [0, 0, 0];
+const IMAGENET_STD  = [1, 1, 1];
 const MODEL_PATH  = "model/best_model.onnx?v=3";
 const LABELS_PATH = "model/labels.json?v=3";
 const LIVE_SCAN_INTERVAL_MS = 1500;
@@ -456,22 +456,15 @@ function preprocessImage(source) {
   ctx.drawImage(source, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
   const imageData = ctx.getImageData(0, 0, IMAGE_SIZE, IMAGE_SIZE).data;
 
-  const size = IMAGE_SIZE * IMAGE_SIZE;
-  const float32Data = new Float32Array(3 * size);
-
-  for (let i = 0; i < size; i++) {
-    const r = imageData[i * 4] / 255;
-    const g = imageData[i * 4 + 1] / 255;
-    const b = imageData[i * 4 + 2] / 255;
-
-    float32Data[i] = (r - IMAGENET_MEAN[0]) / IMAGENET_STD[0];
-    float32Data[size + i] = (g - IMAGENET_MEAN[1]) / IMAGENET_STD[1];
-    float32Data[2 * size + i] = (b - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
+  const float32Data = new Float32Array(IMAGE_SIZE * IMAGE_SIZE * 3);
+  for (let i = 0; i < IMAGE_SIZE * IMAGE_SIZE; i++) {
+    float32Data[i * 3]     = imageData[i * 4] / 255;     // R
+    float32Data[i * 3 + 1] = imageData[i * 4 + 1] / 255; // G
+    float32Data[i * 3 + 2] = imageData[i * 4 + 2] / 255; // B
   }
 
-  return new ort.Tensor("float32", float32Data, [1, 3, IMAGE_SIZE, IMAGE_SIZE]);
+  return new ort.Tensor("float32", float32Data, [1, IMAGE_SIZE, IMAGE_SIZE, 3]); // NHWC — matches Keras model
 }
-
 function softmax(arr) {
   const max = Math.max(...arr);
   const exps = arr.map(x => Math.exp(x - max));
