@@ -237,12 +237,12 @@
 </div>
 
 <script>
-// ----- CONFIG: adjust if your training config differs -----
+// ----- CONFIG: matches the Keras (kannanwisen/Indian-Traffic-Sign-Classification) model -----
 const IMAGE_SIZE = 64;
-const IMAGENET_MEAN = [0, 0, 0];
+const IMAGENET_MEAN = [0, 0, 0];   // Keras model uses plain 0-1 scaling, not ImageNet normalize
 const IMAGENET_STD  = [1, 1, 1];
-const MODEL_PATH  = "model/best_model.onnx?v=3";
-const LABELS_PATH = "model/labels.json?v=3";
+const MODEL_PATH  = "model/best_model.onnx?v=4";
+const LABELS_PATH = "model/labels.json?v=4";
 const LIVE_SCAN_INTERVAL_MS = 1500;
 // ------------------------------------------------------------
 
@@ -445,8 +445,8 @@ async function runInference(imageSource) {
   showResult(sorted);
 }
 
-// Resize -> RGB -> normalize (ImageNet mean/std) -> CHW float32 tensor, matching
-// the PIL/torchvision preprocessing used in predict_image() in the notebook.
+// Resize -> RGB -> scale to [0,1] -> NHWC float32 tensor [1, H, W, 3],
+// matching the Keras model's expected input format (tf.image.convert_image_dtype + resize).
 // Accepts an HTMLImageElement or an HTMLCanvasElement as input.
 function preprocessImage(source) {
   const canvas = document.createElement("canvas");
@@ -463,8 +463,9 @@ function preprocessImage(source) {
     float32Data[i * 3 + 2] = imageData[i * 4 + 2] / 255; // B
   }
 
-  return new ort.Tensor("float32", float32Data, [1, IMAGE_SIZE, IMAGE_SIZE, 3]); // NHWC — matches Keras model
+  return new ort.Tensor("float32", float32Data, [1, IMAGE_SIZE, IMAGE_SIZE, 3]); // NHWC
 }
+
 function softmax(arr) {
   const max = Math.max(...arr);
   const exps = arr.map(x => Math.exp(x - max));
